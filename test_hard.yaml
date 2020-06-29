@@ -1,0 +1,3 @@
+image: test_hard.pgm
+note: A hard bitmap, testing more than 1 connectivity change at once,
+  as well as blind cells with no connection to the outside world
