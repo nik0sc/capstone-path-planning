@@ -35,6 +35,12 @@ http://planning.cs.uiuc.edu/node352.html
 Coverage of Known Spaces: The Boustrophedon Cellular Decomposition (use library acct; Choset)
 https://doi.org/10.1023/A:1008958800904 
 
+Efficient complete coverage of a known arbitrary environment with applications to aerial operations (use lbrary acct; Xu, Viriyasuthee & Rekleitis)
+https://link.springer.com/article/10.1007/s10514-013-9364-x
+
+Sensor-based Coverage of Unknown Environments: Incremental Construction of Morse Decompositions (use library acct; Acar & Choset)
+https://doi.org/10.1177%2F027836402320556368
+
 *** Coverage Path Planning: The Boustrophedon Cellular Decomposition (Choset & Pignon)
 https://pdfs.semanticscholar.org/8df2/e8ed0410c3ae5b0f56c4367b740e91c23d73.pdf
 
@@ -449,12 +455,10 @@ def build_cell_graph(slices: Sequence[SliceInfo],
     return graph
 
 
-def build_reeb_graph(gr: nx.Graph, adjs: Sequence[AdjacencyList]):
-    """
-    Construct the Reeb graph from the adjacency graph.
-    Yes, this is actually possible! But - we need some extra data...
-    """
-    pass
+def graph_labels(gr: nx.Graph) -> Dict[int, str]:
+    return {node: f'<{node}>\nx: {attrs["x_left"]}-{attrs["x_right"]}\n'
+                  f'y: {attrs["y_list"][0]}...{attrs["y_list"][-1]}'
+            for node, attrs in gr.nodes(data=True)}
 
 
 if __name__ == "__main__":
@@ -462,7 +466,8 @@ if __name__ == "__main__":
     slices, adjs = sweep_for_slices(arr, (0,0), 250)
     graph = build_cell_graph(slices, adjs)
     pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
+    labels = graph_labels(graph)
     nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
-            node_size=800, pos=pos)
+            node_size=800, pos=pos, labels=labels)
     plt.show()
     print("Break here")
