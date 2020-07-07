@@ -4,8 +4,8 @@ import numpy as np
 from typing import Tuple, Sequence, Dict, Set
 import itertools as it
 import networkx as nx
-from operator import itemgetter
-from collections import defaultdict
+from operator import itemgetter, attrgetter
+from collections import defaultdict, namedtuple
 from functools import reduce
 import matplotlib.pyplot as plt
 
@@ -52,6 +52,10 @@ https://www2.cs.duke.edu/courses/spring02/cps237/DKnotes/n19.pdf
 # Some useful type annotations
 BoundaryList = Sequence[Tuple[int]]
 AdjacencyList = Dict[int, Set[int]]
+
+SliceInfo = namedtuple("SliceInfo", (
+    "connectivity", "x_left", "x_right", "y_groups"
+))
 
 def load_image(name: str) -> Tuple[np.ndarray, Dict]:
     """
@@ -116,20 +120,15 @@ def slice_count(slic: np.ndarray, threshold: int) -> Tuple[int, BoundaryList]:
 
 
 def sweep(arr: np.ndarray, threshold: int) \
-        -> Tuple[Sequence[int], Sequence[BoundaryList]]:
+        -> Tuple[Sequence[int], Sequence[BoundaryList], Sequence[int]]:
     """
     Sweep the bitmap to find out connectivity and segment boundaries for each
     slice. This is basically slice_count but for each slice in a 2d array.
+    Yields: connectivity, boundaries, x coordinates of each slice
     """
-    slices = []
-    boundaries = []
-
-    for slic in arr:
+    for i, slic in enumerate(arr):
         connectivity, slice_bound = slice_count(slic, threshold)
-        slices.append(connectivity)
-        boundaries.append(slice_bound)
-
-    return slices, boundaries
+        yield connectivity, slice_bound, i
 
 
 def do_segments_overlap(left, right):
@@ -144,6 +143,19 @@ def do_segments_overlap(left, right):
         return True
     else:
         return False
+
+
+def unzip(a):
+    if not isinstance(a, (list, tuple)):
+        a = tuple(a)
+    return list(zip(*a))
+
+
+def take_column(a, i):
+    out = []
+    for elem in a:
+        out.append(elem[i])
+    return out
 
 
 def find_adjacents(left: BoundaryList, right: BoundaryList) -> AdjacencyList:
@@ -226,14 +238,20 @@ def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
 
     There are five kinds of events:
     - "Continue" a segment to another. This is the degenerate case, nothing 
-      interesting happens in this case and the overall Reeb graph doesn't need
-      to be updated. So we won't report this either.
+      interesting happens in this case and the overall Reeb/adjacency graph 
+      doesn't need to be updated. However, the cell boundaries need to be 
+      updated whenever we have a continue event (see Choset & Pignon). 
     
-    The other four will result in updating the Reeb graph:
+    The other four will result in updating the Reeb/adjacency graph:
     - "Split" of a segment into two
     - "Merge" of two segments into one
     - "Loss" of a segment (as in a concave shape)
     - "Gain" of a segment (as in a concave shape)
+
+    Note that the events correspond to critical points. Note also that the 
+    split and merge events correspond to points in contact with 3 cells but 
+    loss and gain events correspond to points in contact with 1 cell. (See 
+    Mannadiar & Rekleitis)
     """
     # reverse the adjacency list. Losses will be, uh, lost, but we just want 
     # to find out the merge events from this
@@ -260,7 +278,8 @@ def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
     return {k: v for k, v in out.items() if len(v) > 0}
 
 
-def cell_adj_to_graph(adjs: Sequence[AdjacencyList]):
+def cell_adj_to_graph(slices: Sequence[SliceInfo],
+        adjs: Sequence[AdjacencyList]) -> nx.Graph:
     """
     Convert a sequence of cell adjacency lists to a graph.
     Graph only! No cell boundary yet.
@@ -277,16 +296,26 @@ def cell_adj_to_graph(adjs: Sequence[AdjacencyList]):
     # Next available node number
     i = 0
 
-    # Setup: Populate the initial frontier and leftmost nodes
-    for _ in adjs[0]:
-        graph.add_node(i)
-        frontier.append(i)
-        i += 1
+    assert slices[0].connectivity == 0 and slices[-1].connectivity == 0, \
+        "First and last slices should have zero connectivity"
+    
+    # Remove the slices with zero connectivity
+    slices = slices[1:-1]
+    
+    assert len(slices) > 0, "Something is really wrong"
 
-    for adj in adjs:
+    # Setup: Populate the initial frontier and leftmost nodes
+    # for j in adjs[0]:
+    #     graph.add_node(i, x_left=slices[0].x_left, x_right=slices[0].x_right,
+    #                    y_list=take_column(slices[0].y_groups, j))
+    #     frontier.append(i)
+    #     i += 1
+
+    for adj, slic in zip(adjs, slices):
         # These events are how we update the Reeb graph. An event means a 
         # change in connectivity that will result in cells changing.
         events = find_events_from_adjlist(adj)
+        modified = []
         for event_name, event_adj in events.items():
             assert len(event_adj) == 1, "too many conn. changes"
 
@@ -296,22 +325,35 @@ def cell_adj_to_graph(adjs: Sequence[AdjacencyList]):
                 # This cell is going to split into two, so it will be replaced
                 # in the frontier by its descendant cells.
                 pred = frontier.pop(left)
+                # modified = list(right)
                 for succ in right:
-                    # Add edges from left to right, and update the frontier to
-                    # include the descendant cells and their node numbers
+                    # Add new nodes on the right 
+                    graph.add_node(i, x_left=slic.x_left, x_right=slic.x_right,
+                                   y_list=take_column(slic.y_groups, succ))
+                    # Add edges from left to right
                     graph.add_edge(pred, i)
+                    # update the frontier to include the descendant cells and 
+                    # their node numbers
                     frontier.insert(succ, i)
+                    # Mark this node as modified, so we don't extend it again 
+                    # later
+                    modified.append(i)
                     i += 1
 
             elif event_name == "merge":
                 # The order is inverted for the adjacency relation
                 # for easier representation
                 [[right, left]] = event_adj.items()
+                # modified = list(right)
                 # need to delete from the frontier in reverse order,
                 # so that we don't disturb the other elements as we delete 
                 # the ones in front
                 preds = [frontier.pop(pred)
                          for pred in sorted(left, reverse=True)]
+
+                # Create the new node
+                graph.add_node(i, x_left=slic.x_left, x_right=slic.x_right,
+                               y_list=take_column(slic.y_groups, right))
 
                 # Add the edges from left to right
                 for pred in preds:
@@ -319,10 +361,13 @@ def cell_adj_to_graph(adjs: Sequence[AdjacencyList]):
                 # Only one new node is created, and only one descendant cell
                 # is inserted into the frontier
                 frontier.insert(right, i)
+                modified.append(i)
                 i += 1
 
             elif event_name == "loss":
                 [[left, _]] = event_adj.items()
+                # Don't change modified
+
                 # No changes to the graph needed, but this node is removed
                 # permanently from the frontier
                 frontier.pop(left)
@@ -332,80 +377,79 @@ def cell_adj_to_graph(adjs: Sequence[AdjacencyList]):
                 # No edges added to graph yet
                 for succ in right:
                     frontier.insert(succ, i)
-                    graph.add_node(i)
+                    modified.append(i)
+                    graph.add_node(i, x_left=slic.x_left, x_right=slic.x_right,
+                                   y_list=take_column(slic.y_groups, succ))
                     i += 1
 
             else:
                 raise NotImplementedError()
+        # Finally, extend all the cells touching the frontier that weren't 
+        # modified
+        not_modified = [succ for succ in frontier
+                        if succ not in modified]
+        
+        for succ in not_modified:
+            graph.nodes[succ]["x_right"] = slic.x_right
+            graph.nodes[succ]["y_list"].extend(
+                take_column(slic.y_groups, frontier.index(succ)))
     
     return graph
 
 
-def reeb_it(arr: np.ndarray, start: Sequence[int], threshold: int):
-    """
-    Construct the Reeb graph from the bitmap.
-    """
-    # slice connectivity
-    slice_conn = [0]
-    slice_conn_groups = [None]
-    sweep_adjacency_lists = []
 
-    slices, boundaries = sweep(arr, threshold)
-    # The x coordinate of the current slice. This is updated as the slice
-    # moves and it is added to the sweep_adjacency_list_xcoords list.
-    # The critical points lie between this x coordinate and the one on the left
-    sweep_adjacency_list_xcoords = []
-    current_x = 0
+def reeb_it_2(gr: nx.Graph, adjs: Sequence[AdjacencyList]):
+    """
+    Construct the Reeb graph from the adjacency graph.
+    Yes, this is actually possible! But - we need some extra data...
+    """
+    pass
+
+
+def build_cell_graph(arr: np.ndarray, start: Sequence[int], threshold: int):
+    """
+    Construct the cell adjacency graph from the bitmap.
+    """
+    # list of SliceInfo objects
+    slices = []
+    # The slice adjacency lists resulting from the above `slices` list
+    sweep_adjacency_lists = []
 
     # groupby collapses continuous runs of items into a single element.
     # >>> [(k, ''.join(g)) for k, g in it.groupby("AAAABBCCCBDD")]
     # [('A', "AAAA"), ('B', "BB"), ('C', "CCC"), ('B', "B"), ('D', "DD")]
-    for k, g in it.groupby(zip(slices, boundaries), key=itemgetter(0)):
-        if k == 0:
-            # Assume that regions with no segments are the borders of the 
-            # floor space
-            #sweep_adjacency_list_xcoords.append(current_x)
-            current_x += len(list(g))
-            # no segments, no problem
+    # The key accesses the connectivity in each item returned by the
+    # enumerate(sweep(arr, threshold)) iterator.
+    # sweep() gives us connectivity and y-segment boundaries.
+    # enumerate gives us the x-coordinate of each slice.
+    for k, g in it.groupby(sweep(arr, threshold), key=itemgetter(0)):
+        # force iterator to list
+        g = list(g)
+        sliceinfo = SliceInfo(
+            connectivity=k,
+            x_left=g[0][2],
+            x_right=g[-1][2],
+            y_groups=[slic[1] for slic in g]
+        )
+        slices.append(sliceinfo)
+
+        if len(slices) == 1:
+            # no point in trying to find adjacents
             continue
 
-        slice_conn.append(k)
-        list_g = [bounds for _, bounds in g]
-        slice_conn_groups.append(list_g)
-
-        if slice_conn[-2] == 0:
-            # First splitting-up from left bound, trivial
-            sweep_adjacency_list_xcoords.append(current_x)
-            current_x += len(list_g)
-            continue
-        elif slice_conn[-2] > k:
-            # a new cell added
-            assert slice_conn[-2] - k == 1, "too many conn. changes"
-        elif slice_conn[-2] < k:
-            # two cells merged into one
-            assert k - slice_conn[-2] == 1, "too many conn. changes"
-        else:
-            assert False, "groupby broke :<"
-        
-        end_left = slice_conn_groups[-2][-1]
-        start_right = list_g[0]
+        end_left = slices[-2].y_groups[-1]
+        start_right = sliceinfo.y_groups[0]
         adjacency = find_adjacents(end_left, start_right)
-
         sweep_adjacency_lists.append(adjacency)
-        sweep_adjacency_list_xcoords.append(current_x)
 
-        current_x += len(list_g)
-    
-    sweep_adjacency_list_xcoords.append(current_x)
-
-    graph = cell_adj_to_graph(sweep_adjacency_lists)        
+    graph = cell_adj_to_graph(slices, sweep_adjacency_lists)        
 
     return graph
 
 
 if __name__ == "__main__":
     arr, config = load_image("test")
-    graph = reeb_it(arr, (0,0), 250)
+    graph = build_cell_graph(arr, (0,0), 250)
     pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
     nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
             node_size=800, pos=pos)
