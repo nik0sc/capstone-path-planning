@@ -231,6 +231,46 @@ def find_adjacents(left: BoundaryList, right: BoundaryList) -> AdjacencyList:
     return out
 
 
+def sweep_for_slices(arr: np.ndarray, start: Sequence[int], threshold: int) \
+        -> Tuple[Sequence[SliceInfo], Sequence[AdjacencyList]]:
+    """
+    Sweep the bitmap but also record down slices and adjacency lists.
+    """
+    # list of SliceInfo objects
+    slices = []
+    # The slice adjacency lists resulting from the above `slices` list
+    sweep_adjacency_lists = []
+
+    # groupby collapses continuous runs of items into a single element.
+    # >>> [(k, ''.join(g)) for k, g in it.groupby("AAAABBCCCBDD")]
+    # [('A', "AAAA"), ('B', "BB"), ('C', "CCC"), ('B', "B"), ('D', "DD")]
+    # The key accesses the connectivity in each item returned by the
+    # enumerate(sweep(arr, threshold)) iterator.
+    # sweep() gives us connectivity and y-segment boundaries.
+    # enumerate gives us the x-coordinate of each slice.
+    for k, g in it.groupby(sweep(arr, threshold), key=itemgetter(0)):
+        # force iterator to list
+        g = list(g)
+        sliceinfo = SliceInfo(
+            connectivity=k,
+            x_left=g[0][2],
+            x_right=g[-1][2],
+            y_groups=[slic[1] for slic in g]
+        )
+        slices.append(sliceinfo)
+
+        if len(slices) == 1:
+            # no point in trying to find adjacents
+            continue
+
+        end_left = slices[-2].y_groups[-1]
+        start_right = sliceinfo.y_groups[0]
+        adjacency = find_adjacents(end_left, start_right)
+        sweep_adjacency_lists.append(adjacency)
+
+    return slices, sweep_adjacency_lists
+
+
 def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
     """
     Given an AdjacencyList from find_adjacents, determine the "events" occuring
@@ -278,16 +318,28 @@ def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
     return {k: v for k, v in out.items() if len(v) > 0}
 
 
-def cell_adj_to_graph(slices: Sequence[SliceInfo],
+def build_cell_graph(slices: Sequence[SliceInfo],
         adjs: Sequence[AdjacencyList]) -> nx.Graph:
     """
-    Convert a sequence of cell adjacency lists to a graph.
-    Graph only! No cell boundary yet.
+    Convert a sequence of cell adjacency lists to a graph. Cells now have 
+    boundaries.
 
-    Since changes to the Reeb graph only occur at changes of connectivity as we 
-    sweep the bitmap, we should be able to construct the Reeb graph given a 
-    sequence of cell adjacency lists, which describe what is happening at the 
-    places where connectivity changes.
+    Since changes to the adjacency graph only occur at changes of connectivity 
+    as we sweep the bitmap, we should be able to construct the adjacency graph
+    given a sequence of cell adjacency lists, which describe what is happening at the places where connectivity changes. 
+
+    However, the cell adjacency lists won't tell us where the cells are in the 
+    bitmap, so we need the slice info list as well to reconstruct this.
+
+    Each node in the returned graph has attributes:
+    - x_left: Inclusive leftmost x coordinate of cell
+    - x_right: Inclusive rightmost x coordinate of cell
+    - y_list: List of tuple of (upper, lower) y-coordinates for each 
+              x-coordinate.
+    
+    Postconditions for each node:
+    - len(y_list) == x_right - x_left + 1
+    - y_list describes a shape with a single continuous area
     """
     graph = nx.DiGraph()
     # the frontier maps numbers in the event adjacency list to actual
@@ -303,13 +355,6 @@ def cell_adj_to_graph(slices: Sequence[SliceInfo],
     slices = slices[1:-1]
     
     assert len(slices) > 0, "Something is really wrong"
-
-    # Setup: Populate the initial frontier and leftmost nodes
-    # for j in adjs[0]:
-    #     graph.add_node(i, x_left=slices[0].x_left, x_right=slices[0].x_right,
-    #                    y_list=take_column(slices[0].y_groups, j))
-    #     frontier.append(i)
-    #     i += 1
 
     for adj, slic in zip(adjs, slices):
         # These events are how we update the Reeb graph. An event means a 
@@ -386,19 +431,25 @@ def cell_adj_to_graph(slices: Sequence[SliceInfo],
                 raise NotImplementedError()
         # Finally, extend all the cells touching the frontier that weren't 
         # modified
-        not_modified = [succ for succ in frontier
-                        if succ not in modified]
-        
-        for succ in not_modified:
-            graph.nodes[succ]["x_right"] = slic.x_right
-            graph.nodes[succ]["y_list"].extend(
-                take_column(slic.y_groups, frontier.index(succ)))
+        for succ in frontier:
+            if succ not in modified:
+                graph.nodes[succ]["x_right"] = slic.x_right
+                graph.nodes[succ]["y_list"].extend(
+                    take_column(slic.y_groups, frontier.index(succ)))
     
+    # Postcondition
+    for _, attrs in graph.nodes(data=True):
+        assert len(attrs["y_list"]) == attrs["x_right"] - attrs["x_left"] + 1
+        continuity = []
+        for i in range(len(attrs["y_list"]) - 1):
+            continuity.append(
+                do_segments_overlap(attrs["y_list"][i], attrs["y_list"][i+1]))
+        assert all(continuity)
+
     return graph
 
 
-
-def reeb_it_2(gr: nx.Graph, adjs: Sequence[AdjacencyList]):
+def build_reeb_graph(gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     """
     Construct the Reeb graph from the adjacency graph.
     Yes, this is actually possible! But - we need some extra data...
@@ -406,50 +457,10 @@ def reeb_it_2(gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     pass
 
 
-def build_cell_graph(arr: np.ndarray, start: Sequence[int], threshold: int):
-    """
-    Construct the cell adjacency graph from the bitmap.
-    """
-    # list of SliceInfo objects
-    slices = []
-    # The slice adjacency lists resulting from the above `slices` list
-    sweep_adjacency_lists = []
-
-    # groupby collapses continuous runs of items into a single element.
-    # >>> [(k, ''.join(g)) for k, g in it.groupby("AAAABBCCCBDD")]
-    # [('A', "AAAA"), ('B', "BB"), ('C', "CCC"), ('B', "B"), ('D', "DD")]
-    # The key accesses the connectivity in each item returned by the
-    # enumerate(sweep(arr, threshold)) iterator.
-    # sweep() gives us connectivity and y-segment boundaries.
-    # enumerate gives us the x-coordinate of each slice.
-    for k, g in it.groupby(sweep(arr, threshold), key=itemgetter(0)):
-        # force iterator to list
-        g = list(g)
-        sliceinfo = SliceInfo(
-            connectivity=k,
-            x_left=g[0][2],
-            x_right=g[-1][2],
-            y_groups=[slic[1] for slic in g]
-        )
-        slices.append(sliceinfo)
-
-        if len(slices) == 1:
-            # no point in trying to find adjacents
-            continue
-
-        end_left = slices[-2].y_groups[-1]
-        start_right = sliceinfo.y_groups[0]
-        adjacency = find_adjacents(end_left, start_right)
-        sweep_adjacency_lists.append(adjacency)
-
-    graph = cell_adj_to_graph(slices, sweep_adjacency_lists)        
-
-    return graph
-
-
 if __name__ == "__main__":
     arr, config = load_image("test")
-    graph = build_cell_graph(arr, (0,0), 250)
+    slices, adjs = sweep_for_slices(arr, (0,0), 250)
+    graph = build_cell_graph(slices, adjs)
     pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
     nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
             node_size=800, pos=pos)
