@@ -455,6 +455,106 @@ def build_cell_graph(slices: Sequence[SliceInfo],
     return graph
 
 
+def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
+    """
+    Construct the Reeb graph from the adjacency lists.
+    """
+    # Newly-created object()s are inserted into the graph as dummy nodes. Those
+    # dummy objects are then inserted into the frontier. That way, we don't 
+    # have to make a decision on which critical point index to assign them, or 
+    # even what kind of critical point should be assigned.
+    # (A newly-created object() will only ever compare equal to itself.)
+    reeb_gr = nx.DiGraph()
+    frontier = []
+
+    # next available critical point index
+    node_i = 0
+
+    # next available cell index
+    edge_i = 0
+
+    # The order of assigning free indices to edges is exactly the same as the
+    # order of assigning to nodes in the adjacency graph. So the edges in the 
+    # Reeb graph have correspondence with the cells.
+    for adj in adjs:
+        events = find_events_from_adjlist(adj)
+        for event_name, event_adj in events.items():
+            # assert len(event_adj) == 1, "too many conn. changes"
+
+            if event_name == "split":
+                [[left, right]] = event_adj.items()
+                
+                pred = frontier.pop(left)
+                # assert type(pred) == object
+                # Replace the dummy object with the next available node number
+                nx.relabel_nodes(reeb_gr, {pred: node_i}, copy=False)
+                
+                for succ in right:
+                    obj = object()
+                    reeb_gr.add_edge(node_i, obj, cell=edge_i)
+                    frontier.insert(succ, obj)
+
+                    edge_i += 1
+                
+                node_i += 1
+
+            elif event_name == "merge":
+                # The order is inverted for the adjacency relation
+                # for easier representation
+                [[right, left]] = event_adj.items()
+
+                # need to delete from the frontier in reverse order,
+                # so that we don't disturb the other elements as we delete 
+                # the ones in front
+                preds = [frontier.pop(pred)
+                         for pred in sorted(left, reverse=True)]
+                # order is backward now...
+                preds.reverse()
+
+                nx.relabel_nodes(reeb_gr, {pred: node_i for pred in preds}, 
+                                 copy=False)
+
+                # Only one new node is created, and only one descendant cell
+                # is inserted into the frontier
+                obj = object()
+                reeb_gr.add_edge(node_i, obj, cell=edge_i)
+                frontier.insert(right, obj)
+
+                node_i += 1
+                edge_i += 1
+
+            elif event_name == "gain":
+                [[_, right]] = event_adj.items()
+
+                reeb_gr.add_node(node_i)
+                for succ in sorted(right):
+                    obj = object()
+                    reeb_gr.add_edge(node_i, obj, cell=edge_i)
+                    frontier.insert(succ, obj)
+
+                    edge_i += 1
+
+                node_i += 1
+
+            elif event_name == "loss":
+                [[left, _]] = event_adj.items()
+
+                obj = frontier.pop(left)
+                nx.relabel_nodes(reeb_gr, {obj: node_i}, copy=False)
+                node_i += 1
+
+            else:
+                raise NotImplementedError()
+
+    # Postcondition (FIXME: not actually met now)
+    for cell in adj_gr.nodes():
+        assert any(cell == attrs["cell"]
+                   for _, _, attrs in reeb_gr.edges(data=True)), \
+            f"Cell {cell} not in Reeb graph!"
+
+    return reeb_gr
+
+
 def graph_labels(gr: nx.Graph) -> Dict[int, str]:
     return {node: f'<{node}>\nx: {attrs["x_left"]}-{attrs["x_right"]}\n'
                   f'y: {attrs["y_list"][0]}...{attrs["y_list"][-1]}'
@@ -465,9 +565,17 @@ if __name__ == "__main__":
     arr, config = load_image("test")
     slices, adjs = sweep_for_slices(arr, (0,0), 250)
     graph = build_cell_graph(slices, adjs)
-    pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
-    labels = graph_labels(graph)
-    nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
-            node_size=800, pos=pos, labels=labels)
+    reeb = build_reeb_graph(graph, adjs)
+    # pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
+    pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="dot")
+    # labels = graph_labels(graph)
+    # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
+    #         node_size=800, pos=pos, labels=labels)
+
+    nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(10),
+            node_size=800, pos=pos)
+    edge_labels = {(u,v): attrs["cell"] for u,v,attrs in reeb.edges(data=True)}
+    nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
+                                 edge_labels=edge_labels)
     plt.show()
     print("Break here")
