@@ -455,6 +455,70 @@ def build_cell_graph(slices: Sequence[SliceInfo],
     return graph
 
 
+def relabel_inplace_fixed(G, mapping):
+    """
+    Same as networkx.relabel._relabel_inplace, but fixed to avoid overwriting 
+    edges if two edges result in the same tails and heads
+    See https://github.com/networkx/networkx/issues/4058
+    """
+    old_labels = set(mapping.keys())
+    new_labels = set(mapping.values())
+    if len(old_labels & new_labels) > 0:
+        # labels sets overlap
+        # can we topological sort and still do the relabeling?
+        D = nx.DiGraph(list(mapping.items()))
+        D.remove_edges_from(nx.selfloop_edges(D))
+        try:
+            nodes = reversed(list(nx.topological_sort(D)))
+        except nx.NetworkXUnfeasible:
+            raise nx.NetworkXUnfeasible('The node label sets are overlapping '
+                                        'and no ordering can resolve the '
+                                        'mapping. Use copy=True.')
+    else:
+        # non-overlapping label sets
+        nodes = old_labels
+
+    multigraph = G.is_multigraph()
+    directed = G.is_directed()
+
+    for old in nodes:
+        try:
+            new = mapping[old]
+        except KeyError:
+            continue
+        if new == old:
+            continue
+        try:
+            G.add_node(new, **G.nodes[old])
+        except KeyError:
+            raise KeyError("Node %s is not in the graph" % old)
+        if multigraph:
+            new_edges = [(new, new if old == target else target, key, data)
+                         for (_, target, key, data)
+                         in G.edges(old, data=True, keys=True)]
+            if directed:
+                new_edges += [(new if old == source else source, new, key, data)
+                              for (source, _, key, data)
+                              in G.in_edges(old, data=True, keys=True)]
+            # New code
+            for i, (tail, head, key, data) in enumerate(new_edges):
+                if head in G[tail] and key in G[tail][head]:
+                    next_key = max(k for k in G[tail][head]) + 1
+                    new_edges[i] = (tail, head, next_key, data)
+            # End new code
+
+        else:
+            new_edges = [(new, new if old == target else target, data)
+                         for (_, target, data) in G.edges(old, data=True)]
+            if directed:
+                new_edges += [(new if old == source else source, new, data)
+                              for (source, _, data) in G.in_edges(old, data=True)]
+
+        G.remove_node(old)
+        G.add_edges_from(new_edges)
+    return G
+
+
 def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     """
     Construct the Reeb graph from the adjacency lists.
@@ -464,7 +528,14 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     # have to make a decision on which critical point index to assign them, or 
     # even what kind of critical point should be assigned.
     # (A newly-created object() will only ever compare equal to itself.)
-    reeb_gr = nx.DiGraph()
+
+    # Why MultiDiGraph? In the adjacency graph, there can't be more than one 
+    # edge between nodes. Equivalently, there can't be more than one way to 
+    # reach a neighbour of any cell. (The boustrophedon decomposition 
+    # guarantees that, since cells don't overlap.) However, there isn't such a
+    # guarantee for the Reeb graph, and indeed there can be more than one path
+    # to reach two critical points next to each other.
+    reeb_gr = nx.MultiDiGraph()
     frontier = []
 
     # next available critical point index
@@ -511,8 +582,7 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
                 # order is backward now...
                 preds.reverse()
 
-                nx.relabel_nodes(reeb_gr, {pred: node_i for pred in preds}, 
-                                 copy=False)
+                relabel_inplace_fixed(reeb_gr, {pred: node_i for pred in preds})
 
                 # Only one new node is created, and only one descendant cell
                 # is inserted into the frontier
@@ -567,7 +637,7 @@ if __name__ == "__main__":
     graph = build_cell_graph(slices, adjs)
     reeb = build_reeb_graph(graph, adjs)
     # pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
-    pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="dot")
+    pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
     # labels = graph_labels(graph)
     # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
     #         node_size=800, pos=pos, labels=labels)
