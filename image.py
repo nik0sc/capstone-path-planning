@@ -8,6 +8,7 @@ from operator import itemgetter, attrgetter
 from collections import defaultdict, namedtuple
 from functools import reduce
 import matplotlib.pyplot as plt
+from pprint import pprint
 
 """
 You will need: PIL, numpy, networkx, matplotlib, pygraphviz
@@ -17,7 +18,7 @@ Bibliography
 
 Planning Algorithms online textbook
 http://planning.cs.uiuc.edu/node260.html
- 6.2 Polygonal Obstacle Regions 
+ 6.2 Polygonal Obstacle Regions
     6.2.1 Representation
     6.2.2 Vertical Cell Decomposition
         Defining the vertical decomposition
@@ -26,14 +27,14 @@ http://planning.cs.uiuc.edu/node260.html
         Solving a query
         Computing the decomposition
         Plane-sweep principle
-        Algorithm execution 
+        Algorithm execution
     6.2.3 Maximum-Clearance Roadmaps
-    6.2.4 Shortest-Path Roadmaps 
+    6.2.4 Shortest-Path Roadmaps
 http://planning.cs.uiuc.edu/node352.html
- Boustrophedon decomposition 
+ Boustrophedon decomposition
 
 Coverage of Known Spaces: The Boustrophedon Cellular Decomposition (use library acct; Choset)
-https://doi.org/10.1023/A:1008958800904 
+https://doi.org/10.1023/A:1008958800904
 
 Efficient complete coverage of a known arbitrary environment with applications to aerial operations (use lbrary acct; Xu, Viriyasuthee & Rekleitis)
 https://link.springer.com/article/10.1007/s10514-013-9364-x
@@ -63,23 +64,24 @@ SliceInfo = namedtuple("SliceInfo", (
     "connectivity", "x_left", "x_right", "y_groups"
 ))
 
+
 def load_image(name: str) -> Tuple[np.ndarray, Dict]:
     """
     Load and return image bitmap and yaml.
     """
-    try: 
+    try:
         with open(name + ".yaml") as f:
             config = yaml.safe_load(f)
     except:
         print("\x1b[41mCannot open yaml\x1b[0m")
         raise
-    
+
     try:
         image = Image.open(name + ".pgm")
     except:
         print("\x1b[41mCannot open pgm\x1b[0m")
         raise
-    
+
     arr = np.array(image.getdata(), dtype="uint8")
     arr.shape = image.size
     # image is transposed so that a[X,Y] indexing works as expected, but
@@ -92,13 +94,13 @@ def load_image(name: str) -> Tuple[np.ndarray, Dict]:
 
 def slice_count(slic: np.ndarray, threshold: int) -> Tuple[int, BoundaryList]:
     """
-    Count the segments in a slice of the bitmap. A pixel with value >= the 
+    Count the segments in a slice of the bitmap. A pixel with value >= the
     threshold is considered to be unobstructed. Returns the connectivity and
-    a tuple of start and end pairs of each segment, exclusive of the obstacle 
+    a tuple of start and end pairs of each segment, exclusive of the obstacle
     parts of the slice.
 
     So, if the slice looks like this:
-    
+
      0 1 2 3 4 5 6 7 8 9
     +-+-+-+-+-+-+-+-+-+-+
     | |x|x|x|x| | |x|x|x|
@@ -113,11 +115,11 @@ def slice_count(slic: np.ndarray, threshold: int) -> Tuple[int, BoundaryList]:
         if slic[i+1] >= threshold and slic[i] < threshold:
             # begin slice (append the coord of the open pixel)
             slice_begin.append(i+1)
-        
+
         if slic[i+1] < threshold and slic[i] >= threshold:
             # end slice (again, open pixel)
             slice_end.append(i)
-    
+
     # reconcile slice begin and end
     if len(slice_begin) != len(slice_end):
         raise ValueError("Unterminated slices")
@@ -167,37 +169,37 @@ def take_column(a, i):
 def find_adjacents(left: BoundaryList, right: BoundaryList) -> AdjacencyList:
     """
     Given left and right lists of segments, determine the adjacency relations
-    between segments on the left and right. 
+    between segments on the left and right.
 
-    Input: 
+    Input:
         left: ((0, 10), (20, 30), (33, 36))
         right: ((0, 10), (20, 23), (27, 29), (40, 50))
     Output: {0: {0}, 1: {1, 2}, 3: {}, None: {3}}
 
-    Note that keys in the output use the indices from the left list, and the 
-    values use the indices from the right. The None key represents no 
+    Note that keys in the output use the indices from the left list, and the
+    values use the indices from the right. The None key represents no
     connecting segment on the left, and the empty set represents no connecting
     segment on the right.
     """
     # Handle special cases first
     if len(left) == 0 and len(right) == 0:
         return {}
-    
+
     if len(left) == 0:
         # right is not [], so all right segments are gained
         return {None: tuple(range(len(right)))}
-    
+
     if len(right) == 0:
         # left is not [], so all left segments are lost
         return {x: tuple() for x in range(len(left))}
-    
+
     # Start at the topmost segments for left and right
     li = 0
     ri = 0
 
     out = defaultdict(set)
 
-    # This is set to false when we reach the bottommost segments on the left 
+    # This is set to false when we reach the bottommost segments on the left
     # and right
     lrun = True
     rrun = True
@@ -222,12 +224,12 @@ def find_adjacents(left: BoundaryList, right: BoundaryList) -> AdjacencyList:
             else:
                 # Done for the right
                 rrun = False
-    
+
     # Check for unconnected segments on the left and add them back
     for lj in range(len(left)):
         if lj not in out:
             out[lj] = set()
-    
+
     # ...And on the right
     right_union = reduce(lambda x, y: x.union(y), out.values())
     for rj in range(len(right)):
@@ -283,30 +285,30 @@ def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
     at the transition from left to right.
 
     There are five kinds of events:
-    - "Continue" a segment to another. This is the degenerate case, nothing 
-      interesting happens in this case and the overall Reeb/adjacency graph 
-      doesn't need to be updated. However, the cell boundaries need to be 
-      updated whenever we have a continue event (see Choset & Pignon). 
-    
+    - "Continue" a segment to another. This is the degenerate case, nothing
+      interesting happens in this case and the overall Reeb/adjacency graph
+      doesn't need to be updated. However, the cell boundaries need to be
+      updated whenever we have a continue event (see Choset & Pignon).
+
     The other four will result in updating the Reeb/adjacency graph:
     - "Split" of a segment into two
     - "Merge" of two segments into one
     - "Loss" of a segment (as in a concave shape)
     - "Gain" of a segment (as in a concave shape)
 
-    Note that the events correspond to critical points. Note also that the 
-    split and merge events correspond to points in contact with 3 cells but 
-    loss and gain events correspond to points in contact with 1 cell. (See 
+    Note that the events correspond to critical points. Note also that the
+    split and merge events correspond to points in contact with 3 cells but
+    loss and gain events correspond to points in contact with 1 cell. (See
     Mannadiar & Rekleitis)
     """
-    # reverse the adjacency list. Losses will be, uh, lost, but we just want 
+    # reverse the adjacency list. Losses will be, uh, lost, but we just want
     # to find out the merge events from this
     rev = defaultdict(set)
     for k, v_set in adj.items():
         for v in v_set:
             rev[v].add(k)
-    
-    # The events can be recognised from certain patterns in the adjacency 
+
+    # The events can be recognised from certain patterns in the adjacency
     # relationship
     split = {k: v_set for k, v_set in adj.items() if len(v_set) > 1}
     merge = {k: v_set for k, v_set in rev.items() if len(v_set) > 1}
@@ -325,24 +327,24 @@ def find_events_from_adjlist(adj: AdjacencyList) -> Dict[str, AdjacencyList]:
 
 
 def build_cell_graph(slices: Sequence[SliceInfo],
-        adjs: Sequence[AdjacencyList]) -> nx.Graph:
+                     adjs: Sequence[AdjacencyList]) -> nx.Graph:
     """
-    Convert a sequence of cell adjacency lists to a graph. Cells now have 
+    Convert a sequence of cell adjacency lists to a graph. Cells now have
     boundaries.
 
-    Since changes to the adjacency graph only occur at changes of connectivity 
+    Since changes to the adjacency graph only occur at changes of connectivity
     as we sweep the bitmap, we should be able to construct the adjacency graph
-    given a sequence of cell adjacency lists, which describe what is happening at the places where connectivity changes. 
+    given a sequence of cell adjacency lists, which describe what is happening at the places where connectivity changes.
 
-    However, the cell adjacency lists won't tell us where the cells are in the 
+    However, the cell adjacency lists won't tell us where the cells are in the
     bitmap, so we need the slice info list as well to reconstruct this.
 
     Each node in the returned graph has attributes:
     - x_left: Inclusive leftmost x coordinate of cell
     - x_right: Inclusive rightmost x coordinate of cell
-    - y_list: List of tuple of (upper, lower) y-coordinates for each 
+    - y_list: List of tuple of (upper, lower) y-coordinates for each
               x-coordinate.
-    
+
     Postconditions for each node:
     - len(y_list) == x_right - x_left + 1
     - y_list describes a shape with a single continuous area
@@ -356,14 +358,14 @@ def build_cell_graph(slices: Sequence[SliceInfo],
 
     assert slices[0].connectivity == 0 and slices[-1].connectivity == 0, \
         "First and last slices should have zero connectivity"
-    
+
     # Remove the slices with zero connectivity
     slices = slices[1:-1]
-    
+
     assert len(slices) > 0, "Something is really wrong"
 
     for adj, slic in zip(adjs, slices):
-        # These events are how we update the Reeb graph. An event means a 
+        # These events are how we update the Reeb graph. An event means a
         # change in connectivity that will result in cells changing.
         events = find_events_from_adjlist(adj)
         modified = []
@@ -378,15 +380,15 @@ def build_cell_graph(slices: Sequence[SliceInfo],
                 pred = frontier.pop(left)
                 # modified = list(right)
                 for succ in right:
-                    # Add new nodes on the right 
+                    # Add new nodes on the right
                     graph.add_node(i, x_left=slic.x_left, x_right=slic.x_right,
                                    y_list=take_column(slic.y_groups, succ))
                     # Add edges from left to right
                     graph.add_edge(pred, i)
-                    # update the frontier to include the descendant cells and 
+                    # update the frontier to include the descendant cells and
                     # their node numbers
                     frontier.insert(succ, i)
-                    # Mark this node as modified, so we don't extend it again 
+                    # Mark this node as modified, so we don't extend it again
                     # later
                     modified.append(i)
                     i += 1
@@ -397,7 +399,7 @@ def build_cell_graph(slices: Sequence[SliceInfo],
                 [[right, left]] = event_adj.items()
                 # modified = list(right)
                 # need to delete from the frontier in reverse order,
-                # so that we don't disturb the other elements as we delete 
+                # so that we don't disturb the other elements as we delete
                 # the ones in front
                 preds = [frontier.pop(pred)
                          for pred in sorted(left, reverse=True)]
@@ -435,14 +437,14 @@ def build_cell_graph(slices: Sequence[SliceInfo],
 
             else:
                 raise NotImplementedError()
-        # Finally, extend all the cells touching the frontier that weren't 
+        # Finally, extend all the cells touching the frontier that weren't
         # modified
         for succ in frontier:
             if succ not in modified:
                 graph.nodes[succ]["x_right"] = slic.x_right
                 graph.nodes[succ]["y_list"].extend(
                     take_column(slic.y_groups, frontier.index(succ)))
-    
+
     # Postcondition
     for _, attrs in graph.nodes(data=True):
         assert len(attrs["y_list"]) == attrs["x_right"] - attrs["x_left"] + 1
@@ -457,7 +459,7 @@ def build_cell_graph(slices: Sequence[SliceInfo],
 
 def relabel_inplace_fixed(G, mapping):
     """
-    Same as networkx.relabel._relabel_inplace, but fixed to avoid overwriting 
+    Same as networkx.relabel._relabel_inplace, but fixed to avoid overwriting
     edges if two edges result in the same tails and heads
     See https://github.com/networkx/networkx/issues/4058
     """
@@ -524,14 +526,14 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     Construct the Reeb graph from the adjacency lists.
     """
     # Newly-created object()s are inserted into the graph as dummy nodes. Those
-    # dummy objects are then inserted into the frontier. That way, we don't 
-    # have to make a decision on which critical point index to assign them, or 
+    # dummy objects are then inserted into the frontier. That way, we don't
+    # have to make a decision on which critical point index to assign them, or
     # even what kind of critical point should be assigned.
     # (A newly-created object() will only ever compare equal to itself.)
 
-    # Why MultiDiGraph? In the adjacency graph, there can't be more than one 
-    # edge between nodes. Equivalently, there can't be more than one way to 
-    # reach a neighbour of any cell. (The boustrophedon decomposition 
+    # Why MultiDiGraph? In the adjacency graph, there can't be more than one
+    # edge between nodes. Equivalently, there can't be more than one way to
+    # reach a neighbour of any cell. (The boustrophedon decomposition
     # guarantees that, since cells don't overlap.) However, there isn't such a
     # guarantee for the Reeb graph, and indeed there can be more than one path
     # to reach two critical points next to each other.
@@ -545,7 +547,7 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     edge_i = 0
 
     # The order of assigning free indices to edges is exactly the same as the
-    # order of assigning to nodes in the adjacency graph. So the edges in the 
+    # order of assigning to nodes in the adjacency graph. So the edges in the
     # Reeb graph have correspondence with the cells.
     for adj in adjs:
         events = find_events_from_adjlist(adj)
@@ -554,19 +556,19 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
 
             if event_name == "split":
                 [[left, right]] = event_adj.items()
-                
+
                 pred = frontier.pop(left)
                 # assert type(pred) == object
                 # Replace the dummy object with the next available node number
                 nx.relabel_nodes(reeb_gr, {pred: node_i}, copy=False)
-                
+
                 for succ in right:
                     obj = object()
                     reeb_gr.add_edge(node_i, obj, cell=edge_i)
                     frontier.insert(succ, obj)
 
                     edge_i += 1
-                
+
                 node_i += 1
 
             elif event_name == "merge":
@@ -575,14 +577,15 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
                 [[right, left]] = event_adj.items()
 
                 # need to delete from the frontier in reverse order,
-                # so that we don't disturb the other elements as we delete 
+                # so that we don't disturb the other elements as we delete
                 # the ones in front
                 preds = [frontier.pop(pred)
                          for pred in sorted(left, reverse=True)]
                 # order is backward now...
                 preds.reverse()
 
-                relabel_inplace_fixed(reeb_gr, {pred: node_i for pred in preds})
+                relabel_inplace_fixed(
+                    reeb_gr, {pred: node_i for pred in preds})
 
                 # Only one new node is created, and only one descendant cell
                 # is inserted into the frontier
@@ -616,7 +619,9 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
             else:
                 raise NotImplementedError()
 
-    # Postcondition (FIXME: not actually met now)
+    reeb_edge_weight(reeb_gr, adj_gr)
+
+    # Postcondition
     for cell in adj_gr.nodes():
         assert any(cell == attrs["cell"]
                    for _, _, attrs in reeb_gr.edges(data=True)), \
@@ -625,27 +630,61 @@ def build_reeb_graph(adj_gr: nx.Graph, adjs: Sequence[AdjacencyList]):
     return reeb_gr
 
 
+def reeb_edge_weight(reeb_gr: nx.Graph, adj_gr: nx.Graph):
+    """
+    Add weight to edges in the Reeb graph. Performs operation in-place.
+    """
+
+    for _, _, data in reeb_gr.edges(data=True):
+        cell = data["cell"]
+        y_list = adj_gr.nodes[cell]["y_list"]
+        pixel_count = sum(b - a + 1 for a, b in y_list)
+        assert pixel_count > 0
+        data["weight"] = pixel_count
+
+
 def graph_labels(gr: nx.Graph) -> Dict[int, str]:
     return {node: f'<{node}>\nx: {attrs["x_left"]}-{attrs["x_right"]}\n'
                   f'y: {attrs["y_list"][0]}...{attrs["y_list"][-1]}'
             for node, attrs in gr.nodes(data=True)}
 
 
+def reeb_process(gr: nx.Graph) -> Sequence[Tuple[int, int, int, int]]:
+    """
+    Convert the Reeb graph from NetworkX object to the preferred representation
+    for the Chinese postman algorithm.
+
+    Format:
+    [(crit pt on left, crit pt on right, cell #, pixels in cell), ...]
+    """
+
+    assert gr.is_directed() and gr.is_multigraph(), "Wrong kind of graph"
+
+    out = []
+
+    for tail, head, data in gr.edges(data=True):
+        out.append((tail, head, data["cell"], data["weight"]))
+
+    return out
+
+
 if __name__ == "__main__":
     arr, config = load_image("test")
-    slices, adjs = sweep_for_slices(arr, (0,0), 250)
+    slices, adjs = sweep_for_slices(arr, (0, 0), 250)
     graph = build_cell_graph(slices, adjs)
     reeb = build_reeb_graph(graph, adjs)
     # pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
     pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
     # labels = graph_labels(graph)
-    # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12), 
+    # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12),
     #         node_size=800, pos=pos, labels=labels)
 
     nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(10),
             node_size=800, pos=pos)
-    edge_labels = {(u,v): attrs["cell"] for u,v,attrs in reeb.edges(data=True)}
+    edge_labels = {(u, v): attrs["cell"]
+                   for u, v, attrs in reeb.edges(data=True)}
     nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
                                  edge_labels=edge_labels)
     plt.show()
+    pprint(reeb_process(reeb))
     print("Break here")
