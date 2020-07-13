@@ -778,16 +778,26 @@ def get_shortest_paths_distances(graph, pairs, edge_weight_name):
 
 
 def convert_edge_list_to_pandas(edgelist):
+    print(edgelist)
+    # temp = []
+    # for x in edgelist:
+    #     # n1 = str(x[0]) + '@' + str(x[2])
+    #     # n2 = str(x[1]) + '@' + str(x[2])
+    #     # trail1 = '@' + str(x[2])
+    #     temp.append(list([n1,n2,trail1,x[3]]))
+
+
     df = pd.DataFrame(edgelist)
     # trail_list = [trail for _ in range(len(edgelist))]
     df.columns = ['node1','node2','trail','distance']
     # df.insert(loc=)
+    df.to_csv ('dataframe.csv', index = False, header=True)
     return df
 
 
 
 
-def chinese_postman(edgelist):
+def chinese_postman(edgelist,start,end):
     g = nx.Graph()
     for i, elrow in edgelist.iterrows():
         # g.add_edge(elrow[0], elrow[1], attr_dict=elrow[2:].to_dict())  # deprecated after NX 1.11
@@ -850,13 +860,13 @@ def chinese_postman(edgelist):
     print('Number of edges in original graph: {}'.format(len(g.edges())))
     print('Number of edges in augmented graph: {}'.format(len(g_aug.edges())))
 
-    naive_euler_circuit = list(nx.eulerian_circuit(g_aug, source=0))
+    naive_euler_circuit = list(nx.eulerian_circuit(g_aug, source=start))
     print('Length of eulerian circuit: {}'.format(len(naive_euler_circuit)))
     print(naive_euler_circuit[0:10])
     
 
     # Create the Eulerian circuit
-    euler_circuit = create_eulerian_circuit(g_aug, g, 9)
+    euler_circuit = create_eulerian_circuit(g_aug, g, end)
 
     print('Length of Eulerian circuit: {}'.format(len(euler_circuit)))
     for i, edge in enumerate(euler_circuit[:]):
@@ -889,6 +899,23 @@ def chinese_postman(edgelist):
     print('\nNumber of times visiting each edge:')
     print(edge_visits.to_string(index=False))
 
+
+from postman_problems.solver import cpp
+from postman_problems.stats import calculate_postman_solution_stats
+
+
+def chinese_postman_again(csv):
+    # find CPP solution
+    circuit, graph = cpp(edgelist_filename=csv, start_node='0')
+
+    # print solution route
+    for e in circuit:
+        print(e)
+
+    # print solution summary stats
+    for k, v in calculate_postman_solution_stats(circuit).items():
+        print(k, v)
+
 if __name__ == "__main__":
     arr, config = load_image("test")
     slices, adjs = sweep_for_slices(arr, (0, 0), 250)
@@ -909,7 +936,8 @@ if __name__ == "__main__":
     # plt.show()
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
-    chinese_postman(edgelist)
+    # chinese_postman(edgelist,start=0,end=0)
+    chinese_postman_again('dataframe.csv')
     
     # pprint(edge_list)
     print("Break here")
