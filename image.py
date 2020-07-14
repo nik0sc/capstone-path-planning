@@ -778,133 +778,20 @@ def get_shortest_paths_distances(graph, pairs, edge_weight_name):
 
 
 def convert_edge_list_to_pandas(edgelist):
-    print(edgelist)
-    # temp = []
-    # for x in edgelist:
-    #     # n1 = str(x[0]) + '@' + str(x[2])
-    #     # n2 = str(x[1]) + '@' + str(x[2])
-    #     # trail1 = '@' + str(x[2])
-    #     temp.append(list([n1,n2,trail1,x[3]]))
-
-
     df = pd.DataFrame(edgelist)
-    # trail_list = [trail for _ in range(len(edgelist))]
     df.columns = ['node1','node2','trail','distance']
-    # df.insert(loc=)
     df.to_csv ('dataframe.csv', index = False, header=True)
     return df
 
 
 
 
-def chinese_postman(edgelist,start,end):
-    g = nx.Graph()
-    for i, elrow in edgelist.iterrows():
-        # g.add_edge(elrow[0], elrow[1], attr_dict=elrow[2:].to_dict())  # deprecated after NX 1.11
-        g.add_edge(elrow[0], elrow[1], **elrow[2:].to_dict())
-
-    # print('# of edges: {}'.format(g.number_of_edges()))
-    # print(elrow[0]) # node1
-    # print(elrow[1]) # node2
-    # print(elrow[2:].to_dict()) # edge attribute dict
-    nodes_odd_degree = [v for v, d in g.degree() if d % 2 == 1]
-    print('Number of nodes of odd degree: {}'.format(len(nodes_odd_degree)))
-    print('Number of total nodes: {}'.format(len(g.nodes())))
-
-    # Compute all pairs of odd nodes. in a list of tuples
-    odd_node_pairs = list(itertools.combinations(nodes_odd_degree, 2))
-
-    # Preview pairs of odd degree nodes
-    # print(odd_node_pairs[0:10])
-
-    # Counts
-    print('Number of odd pairs: {}'.format(len(odd_node_pairs)))
-
-
-    # Compute shortest paths.  Return a dictionary with node pairs keys and a single value equal to shortest path distance.
-    odd_node_pairs_shortest_paths = get_shortest_paths_distances(g, odd_node_pairs, 'distance')
-
-    # Preview with a bit of hack (there is no head/slice method for dictionaries).
-    print(dict(list(odd_node_pairs_shortest_paths.items())[0:10]))
-
-
-        # Generate the complete graph
-    g_odd_complete = create_complete_graph(odd_node_pairs_shortest_paths, flip_weights=True)
-
-    # Counts
-    print('Number of nodes: {}'.format(len(g_odd_complete.nodes())))
-    print('Number of edges: {}'.format(len(g_odd_complete.edges())))
-
-
-    # Compute min weight matching.
-    # Note: max_weight_matching uses the 'weight' attribute by default as the attribute to maximize.
-    odd_matching_dupes = nx.algorithms.max_weight_matching(g_odd_complete, True)
-
-    print('Number of edges in matching: {}'.format(len(odd_matching_dupes)))
-
-
-    odd_dupes = {}
-    for e in odd_matching_dupes:
-        odd_dupes[e[0]] = e[1]
-    # Convert matching to list of deduped tuples
-    odd_matching = list(pd.unique([tuple(sorted([k, v])) for k, v in odd_dupes.items()]))
-
-    # Counts
-    print('Number of edges in matching (deduped): {}'.format(len(odd_matching)))
-
-
-    # Create augmented graph: add the min weight matching edges to g
-    g_aug = add_augmenting_path_to_graph(g, odd_matching)
-
-    # Counts
-    print('Number of edges in original graph: {}'.format(len(g.edges())))
-    print('Number of edges in augmented graph: {}'.format(len(g_aug.edges())))
-
-    naive_euler_circuit = list(nx.eulerian_circuit(g_aug, source=start))
-    print('Length of eulerian circuit: {}'.format(len(naive_euler_circuit)))
-    print(naive_euler_circuit[0:10])
-    
-
-    # Create the Eulerian circuit
-    euler_circuit = create_eulerian_circuit(g_aug, g, end)
-
-    print('Length of Eulerian circuit: {}'.format(len(euler_circuit)))
-    for i, edge in enumerate(euler_circuit[:]):
-        print(i, edge)
-
-
-    # Computing some stats
-    total_mileage_of_circuit = sum([edge[2]['distance'] for edge in euler_circuit])
-    total_mileage_on_orig_trail_map = sum(nx.get_edge_attributes(g, 'distance').values())
-    _vcn = pd.value_counts(pd.value_counts([(e[0]) for e in euler_circuit]), sort=False)
-    node_visits = pd.DataFrame({'n_visits': _vcn.index, 'n_nodes': _vcn.values})
-    _vce = pd.value_counts(pd.value_counts([sorted(e)[0] + sorted(e)[1] for e in nx.MultiDiGraph(euler_circuit).edges()]))
-    edge_visits = pd.DataFrame({'n_visits': _vce.index, 'n_edges': _vce.values})
-
-    # Printing stats
-    print('Mileage of circuit: {0:.2f}'.format(total_mileage_of_circuit))
-    print('Mileage on original trail map: {0:.2f}'.format(total_mileage_on_orig_trail_map))
-    print('Mileage retracing edges: {0:.2f}'.format(total_mileage_of_circuit-total_mileage_on_orig_trail_map))
-    print('Percent of mileage retraced: {0:.2f}%\n'.format((1-total_mileage_of_circuit/total_mileage_on_orig_trail_map)*-100))
-
-    print('Number of edges in circuit: {}'.format(len(euler_circuit)))
-    print('Number of edges in original graph: {}'.format(len(g.edges())))
-    print('Number of nodes in original graph: {}\n'.format(len(g.nodes())))
-
-    print('Number of edges traversed more than once: {}\n'.format(len(euler_circuit)-len(g.edges())))  
-
-    print('Number of times visiting each node:')
-    print(node_visits.to_string(index=False))
-
-    print('\nNumber of times visiting each edge:')
-    print(edge_visits.to_string(index=False))
-
 
 from postman_problems.solver import cpp
 from postman_problems.stats import calculate_postman_solution_stats
 
 
-def chinese_postman_again(csv):
+def chinese_postman(csv):
     # find CPP solution
     circuit, graph = cpp(edgelist_filename=csv, start_node='0')
 
@@ -937,7 +824,7 @@ if __name__ == "__main__":
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
     # chinese_postman(edgelist,start=0,end=0)
-    chinese_postman_again('dataframe.csv')
+    chinese_postman('dataframe.csv')
     
     # pprint(edge_list)
     print("Break here")
