@@ -793,15 +793,99 @@ from postman_problems.stats import calculate_postman_solution_stats
 
 def chinese_postman(csv):
     # find CPP solution
-    circuit, graph = cpp(edgelist_filename=csv, start_node='0')
+    circuit, graph = cpp(edgelist_filename=csv, start_node='0')    
+    return circuit
+  
 
-    # print solution route
-    for e in circuit:
-        print(e)
+def boustrophedic_path(graph,circuit,robot_width):
 
-    # print solution summary stats
-    for k, v in calculate_postman_solution_stats(circuit).items():
-        print(k, v)
+	ret = []
+
+	# print(circuit)
+
+	augmented_set = set()
+	augmented_traversed = set()
+
+	for cell in circuit:
+		if cell[3].get('augmented'):
+			if cell[3].get('trail') not in augmented_set:
+				augmented_set.add(cell[3].get('trail'))
+
+	print(augmented_set)
+
+	for c,cell in enumerate(circuit):
+		path = []
+		cell_info = graph.nodes[cell[3]['trail']]
+		# print(cell)
+		# print(cell_info)
+
+
+		## first time traversing, and is from left to right
+		if cell[3].get('trail') in augmented_set and cell[3].get('trail') not in augmented_traversed:
+			augmented_traversed.add(cell[3].get('trail'))
+			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
+			# print(mid_y)
+			upwards = True
+			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
+			for x in x_list:
+				if(x>cell_info['x_right']):
+					x = cell_info['x_right']
+				y1 = mid_y
+				y2 = cell_info['y_list'][x-cell_info['x_left']][1]
+				if upwards:
+					path.append((x,y1))
+					path.append((x,y2))
+					upwards = False
+				else:
+					path.append((x,y2))
+					path.append((x,y1))
+					upwards = True
+
+		## second time traversing , means from right to left so have to reverse.
+		elif cell[3].get('trail') in augmented_set and cell[3].get('trail') in augmented_traversed:
+			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
+			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
+			x_list = x_list[::-1]
+			upwards = True
+			for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width):
+				if(x>cell_info['x_right']):
+					x = cell_info['x_right']
+				y1 = cell_info['y_list'][x-cell_info['x_left']][0]
+				y2 = mid_y
+				if upwards:
+					path.append((x,y1))
+					path.append((x,y2))
+					upwards = False
+				else:
+					path.append((x,y2))
+					path.append((x,y1))
+					upwards = True
+
+
+		else:
+			upwards = True
+			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
+
+			## if its going from other side, we reverse it
+			if cell_info['x_right'] < graph.nodes[circuit[c-1][3]['trail']]['x_left']:
+				x_list = x_list[::-1]
+
+			## adding the coordinates in the plan	
+			for x in x_list:
+				if(x>cell_info['x_right']):
+					x = cell_info['x_right']
+				y1 = cell_info['y_list'][x-cell_info['x_left']][0]
+				y2 = cell_info['y_list'][x-cell_info['x_left']][1]
+				if upwards:
+					path.append((x,y1))
+					path.append((x,y2))
+					upwards = False
+				else:
+					path.append((x,y2))
+					path.append((x,y1))
+					upwards = True
+		print(path)
+	return
 
 if __name__ == "__main__":
     arr, config = load_image("test")
@@ -816,6 +900,7 @@ if __name__ == "__main__":
 
     # nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(10),
     #         node_size=800, pos=pos)
+    # print(slices)
     edge_labels = {(u, v): attrs["cell"]
                    for u, v, attrs in reeb.edges(data=True)}
     # nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
@@ -823,8 +908,8 @@ if __name__ == "__main__":
     # plt.show()
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
-    # chinese_postman(edgelist,start=0,end=0)
-    chinese_postman('dataframe.csv')
+    circuit = chinese_postman('dataframe.csv')
+    boustrophedic_path(graph,circuit,2)
     
     # pprint(edge_list)
     print("Break here")
