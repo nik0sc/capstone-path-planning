@@ -797,14 +797,15 @@ def chinese_postman(csv):
     return circuit
   
 
-def boustrophedic_path(graph,circuit,robot_width):
+def boustrophedic_path(graph,circuit,robot_width,wall_distance):
 
 	ret = []
 
 	# print(circuit)
 
 	augmented_set = set()
-	augmented_traversed = set()
+	augmented_traversed = dict()
+
 
 	for cell in circuit:
 		if cell[3].get('augmented'):
@@ -813,25 +814,35 @@ def boustrophedic_path(graph,circuit,robot_width):
 
 	print(augmented_set)
 
+	## helps us find our distance better
+	robot_x = 0
+
 	for c,cell in enumerate(circuit):
 		path = []
 		cell_info = graph.nodes[cell[3]['trail']]
 		# print(cell)
 		# print(cell_info)
+		# print(robot_x)
 
 
 		## first time traversing, and is from left to right
 		if cell[3].get('trail') in augmented_set and cell[3].get('trail') not in augmented_traversed:
-			augmented_traversed.add(cell[3].get('trail'))
+			# augmented_traversed.add(cell[3].get('trail'))
 			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
 			# print(mid_y)
 			upwards = True
 			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
+			## this means cell is on the left, and we must go from the right. as distance to right is lesser.
+			if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
+				x_list = x_list[::-1]
+			augmented_traversed[cell[3].get('trail')] = x_list
 			for x in x_list:
 				if(x>cell_info['x_right']):
 					x = cell_info['x_right']
-				y1 = mid_y
-				y2 = cell_info['y_list'][x-cell_info['x_left']][1]
+				if(x==cell_info['x_left']):
+					x += wall_distance
+				y1 = mid_y + wall_distance
+				y2 = cell_info['y_list'][x-cell_info['x_left']][1] - wall_distance
 				if upwards:
 					path.append((x,y1))
 					path.append((x,y2))
@@ -840,18 +851,21 @@ def boustrophedic_path(graph,circuit,robot_width):
 					path.append((x,y2))
 					path.append((x,y1))
 					upwards = True
+				robot_x = x
 
 		## second time traversing , means from right to left so have to reverse.
 		elif cell[3].get('trail') in augmented_set and cell[3].get('trail') in augmented_traversed:
 			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
 			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
-			x_list = x_list[::-1]
+			x_list = augmented_traversed[cell[3].get('trail')][::-1]
 			upwards = True
-			for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width):
+			for x in x_list:
 				if(x>cell_info['x_right']):
 					x = cell_info['x_right']
-				y1 = cell_info['y_list'][x-cell_info['x_left']][0]
-				y2 = mid_y
+				if(x==cell_info['x_left']):
+					x += wall_distance
+				y1 = cell_info['y_list'][x-cell_info['x_left']][0] + wall_distance
+				y2 = mid_y - wall_distance
 				if upwards:
 					path.append((x,y1))
 					path.append((x,y2))
@@ -860,6 +874,7 @@ def boustrophedic_path(graph,circuit,robot_width):
 					path.append((x,y2))
 					path.append((x,y1))
 					upwards = True
+				robot_x = x
 
 
 		else:
@@ -867,15 +882,21 @@ def boustrophedic_path(graph,circuit,robot_width):
 			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
 
 			## if its going from other side, we reverse it
-			if cell_info['x_right'] < graph.nodes[circuit[c-1][3]['trail']]['x_left']:
+			# if cell_info['x_left'] < graph.nodes[circuit[c-1][3]['trail']]['x_left']:
+			# 	x_list = x_list[::-1]
+
+			if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
 				x_list = x_list[::-1]
 
 			## adding the coordinates in the plan	
 			for x in x_list:
+				# edge case
 				if(x>cell_info['x_right']):
 					x = cell_info['x_right']
-				y1 = cell_info['y_list'][x-cell_info['x_left']][0]
-				y2 = cell_info['y_list'][x-cell_info['x_left']][1]
+				if(x==cell_info['x_left']):
+					x += wall_distance
+				y1 = cell_info['y_list'][x-cell_info['x_left']][0] + wall_distance
+				y2 = cell_info['y_list'][x-cell_info['x_left']][1] - wall_distance
 				if upwards:
 					path.append((x,y1))
 					path.append((x,y2))
@@ -884,6 +905,7 @@ def boustrophedic_path(graph,circuit,robot_width):
 					path.append((x,y2))
 					path.append((x,y1))
 					upwards = True
+				robot_x = x
 		print(path)
 	return
 
@@ -909,7 +931,7 @@ if __name__ == "__main__":
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
     circuit = chinese_postman('dataframe.csv')
-    boustrophedic_path(graph,circuit,2)
+    boustrophedic_path(graph,circuit,2,0)
     
     # pprint(edge_list)
     print("Break here")
