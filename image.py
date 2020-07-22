@@ -15,6 +15,7 @@ import copy
 import networkx as nx
 import pandas as pd
 import matplotlib.pyplot as plt
+import sys
 
 
 
@@ -676,104 +677,7 @@ def reeb_process(gr: nx.Graph) -> Sequence[Tuple[int, int, int, int]]:
 
     return out
 
-def create_complete_graph(pair_weights, flip_weights=True):
-    # """
-    # Create a completely connected graph using a list of vertex pairs and the shortest path distances between them
-    # Parameters: 
-    #     pair_weights: list[tuple] from the output of get_shortest_paths_distances
-    #     flip_weights: Boolean. Should we negate the edge attribute in pair_weights?
-    # """
-    g = nx.Graph()
-    for k, v in pair_weights.items():
-        wt_i = - v if flip_weights else v
-        # g.add_edge(k[0], k[1], {'distance': v, 'weight': wt_i})  # deprecated after NX 1.11 
-        g.add_edge(k[0], k[1], **{'distance': v, 'weight': wt_i})  
-    return g
 
-
-def add_augmenting_path_to_graph(graph, min_weight_pairs):
-# """
-# Add the min weight matching edges to the original graph
-# Parameters:
-#     graph: NetworkX graph (original graph from trailmap)
-#     min_weight_pairs: list[tuples] of node pairs from min weight matching
-# Returns:
-#     augmented NetworkX graph
-# """
-
-# We need to make the augmented graph a MultiGraph so we can add parallel edges
-    graph_aug = nx.MultiGraph(graph.copy())
-    for pair in min_weight_pairs:
-        graph_aug.add_edge(pair[0], 
-                           pair[1], 
-                           **{'distance': nx.dijkstra_path_length(graph, pair[0], pair[1]), 'trail': 'augmented'}
-                           # attr_dict={'distance': nx.dijkstra_path_length(graph, pair[0], pair[1]),
-                           #            'trail': 'augmented'}  # deprecated after 1.11
-                          )
-    return graph_aug
-
-
-def create_eulerian_circuit(graph_augmented, graph_original, starting_node=None):
-    # """Create the eulerian path using only edges from the original graph."""
-    euler_circuit = []
-    naive_circuit = list(nx.eulerian_circuit(graph_augmented, source=starting_node))
-    
-    for edge in naive_circuit:
-        edge_data = graph_augmented.get_edge_data(edge[0], edge[1])    
-        
-        if edge_data[0]['trail'] != 'augmented':
-            # If `edge` exists in original graph, grab the edge attributes and add to eulerian circuit.
-            edge_att = graph_original[edge[0]][edge[1]]
-            euler_circuit.append((edge[0], edge[1], edge_att)) 
-        else: 
-            aug_path = nx.shortest_path(graph_original, edge[0], edge[1], weight='distance')
-            aug_path_pairs = list(zip(aug_path[:-1], aug_path[1:]))
-            
-            print('Filling in edges for augmented edge: {}'.format(edge))
-            print('Augmenting path: {}'.format(' => '.join(str(aug_path))))
-            print('Augmenting path pairs: {}\n'.format(aug_path_pairs))
-            
-            # If `edge` does not exist in original graph, find the shortest path between its nodes and 
-            #  add the edge attributes for each link in the shortest path.
-            for edge_aug in aug_path_pairs:
-                edge_aug_att = graph_original[edge_aug[0]][edge_aug[1]]
-                euler_circuit.append((edge_aug[0], edge_aug[1], edge_aug_att))
-                                      
-    return euler_circuit
-
-def create_cpp_edgelist(euler_circuit):
-    # """
-    # Create the edgelist without parallel edge for the visualization
-    # Combine duplicate edges and keep track of their sequence and # of walks
-    # Parameters:
-    #     euler_circuit: list[tuple] from create_eulerian_circuit
-    # """
-    cpp_edgelist = {}
-
-    for i, e in enumerate(euler_circuit):
-        edge = frozenset([e[0], e[1]])
-
-        if edge in cpp_edgelist:
-            cpp_edgelist[edge][2]['sequence'] += ', ' + str(i)
-            cpp_edgelist[edge][2]['visits'] += 1
-
-        else:
-            cpp_edgelist[edge] = e
-            cpp_edgelist[edge][2]['sequence'] = str(i)
-            cpp_edgelist[edge][2]['visits'] = 1
-        
-    return list(cpp_edgelist.values())
-
-
-
-
-
-def get_shortest_paths_distances(graph, pairs, edge_weight_name):
-    # """Compute shortest distance between each pair of nodes in a graph.  Return a dictionary keyed on node pairs (tuples)."""
-    distances = {}
-    for pair in pairs:
-        distances[pair] = nx.dijkstra_path_length(graph, pair[0], pair[1], weight=edge_weight_name)
-    return distances
 
 
 
@@ -812,7 +716,6 @@ def boustrophedic_path(graph,circuit,robot_width,wall_distance):
 			if cell[3].get('trail') not in augmented_set:
 				augmented_set.add(cell[3].get('trail'))
 
-	print(augmented_set)
 
 	## helps us find our distance better
 	robot_x = 0
@@ -931,7 +834,7 @@ if __name__ == "__main__":
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
     circuit = chinese_postman('dataframe.csv')
-    boustrophedic_path(graph,circuit,2,0)
+    coordinates = boustrophedic_path(graph,circuit,int(sys.argv[1]),int(sys.argv[2]))
     
     # pprint(edge_list)
     print("Break here")
