@@ -1,3 +1,5 @@
+from postman_problems.stats import calculate_postman_solution_stats
+from postman_problems.solver import cpp
 from PIL import Image
 import yaml
 import numpy as np
@@ -9,7 +11,7 @@ from collections import defaultdict, namedtuple
 from functools import reduce
 import matplotlib.pyplot as plt
 from pprint import pprint
-#miguel
+# miguel
 import itertools
 import copy
 import networkx as nx
@@ -17,8 +19,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import sys
 
-
-
+import cv2
 
 """
 You will need: PIL, numpy, networkx, matplotlib, pygraphviz
@@ -87,13 +88,16 @@ def load_image(name: str) -> Tuple[np.ndarray, Dict]:
         raise
 
     try:
-        image = Image.open(name + ".pgm")
+        # image = Image.open(name + ".bmp")
+        # assert image.mode == "L", "Wrong image pixel mode (not grayscale)"
+        image = cv2.imread(config['image'], 0)
     except:
         print("\x1b[41mCannot open pgm\x1b[0m")
         raise
 
-    arr = np.array(image.getdata(), dtype="uint8")
-    arr.shape = image.size
+    # arr = np.array(image.getdata())
+    # arr.shape = image.size
+    arr = image
     # image is transposed so that a[X,Y] indexing works as expected, but
     # more importantly, so that it is stored in column major order so when
     # we iterate over the array, we get columns and not rows
@@ -678,163 +682,174 @@ def reeb_process(gr: nx.Graph) -> Sequence[Tuple[int, int, int, int]]:
     return out
 
 
-
-
-
 def convert_edge_list_to_pandas(edgelist):
     df = pd.DataFrame(edgelist)
-    df.columns = ['node1','node2','trail','distance']
-    df.to_csv ('dataframe.csv', index = False, header=True)
+    df.columns = ['node1', 'node2', 'trail', 'distance']
+    df.to_csv('dataframe.csv', index=False, header=True)
     return df
-
-
-
-
-
-from postman_problems.solver import cpp
-from postman_problems.stats import calculate_postman_solution_stats
 
 
 def chinese_postman(csv):
     # find CPP solution
-    circuit, graph = cpp(edgelist_filename=csv, start_node='0')    
+    circuit, graph = cpp(edgelist_filename=csv, start_node='0')
     return circuit
-  
-
-def boustrophedic_path(graph,circuit,robot_width,wall_distance):
-
-	ret = []
-
-	# print(circuit)
-
-	augmented_set = set()
-	augmented_traversed = dict()
 
 
-	for cell in circuit:
-		if cell[3].get('augmented'):
-			if cell[3].get('trail') not in augmented_set:
-				augmented_set.add(cell[3].get('trail'))
+def boustrophedic_path(graph, circuit, robot_width, wall_distance):
 
+    ret = []
 
-	## helps us find our distance better
-	robot_x = 0
+    # print(circuit)
 
-	for c,cell in enumerate(circuit):
-		path = []
-		cell_info = graph.nodes[cell[3]['trail']]
-		# print(cell)
-		# print(cell_info)
-		# print(robot_x)
+    augmented_set = set()
+    augmented_traversed = dict()
 
+    for cell in circuit:
+        if cell[3].get('augmented'):
+            if cell[3].get('trail') not in augmented_set:
+                augmented_set.add(cell[3].get('trail'))
 
-		## first time traversing, and is from left to right
-		if cell[3].get('trail') in augmented_set and cell[3].get('trail') not in augmented_traversed:
-			# augmented_traversed.add(cell[3].get('trail'))
-			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
-			# print(mid_y)
-			upwards = True
-			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
-			## this means cell is on the left, and we must go from the right. as distance to right is lesser.
-			if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
-				x_list = x_list[::-1]
-			augmented_traversed[cell[3].get('trail')] = x_list
-			for x in x_list:
-				if(x>cell_info['x_right']):
-					x = cell_info['x_right']
-				if(x==cell_info['x_left']):
-					x += wall_distance
-				y1 = mid_y + wall_distance
-				y2 = cell_info['y_list'][x-cell_info['x_left']][1] - wall_distance
-				if upwards:
-					path.append((x,y1))
-					path.append((x,y2))
-					upwards = False
-				else:
-					path.append((x,y2))
-					path.append((x,y1))
-					upwards = True
-				robot_x = x
+    # helps us find our distance better
+    robot_x = 0
 
-		## second time traversing , means from right to left so have to reverse.
-		elif cell[3].get('trail') in augmented_set and cell[3].get('trail') in augmented_traversed:
-			mid_y = (cell_info['y_list'][0][0] + cell_info['y_list'][0][1]) // 2
-			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
-			x_list = augmented_traversed[cell[3].get('trail')][::-1]
-			upwards = True
-			for x in x_list:
-				if(x>cell_info['x_right']):
-					x = cell_info['x_right']
-				if(x==cell_info['x_left']):
-					x += wall_distance
-				y1 = cell_info['y_list'][x-cell_info['x_left']][0] + wall_distance
-				y2 = mid_y - wall_distance
-				if upwards:
-					path.append((x,y1))
-					path.append((x,y2))
-					upwards = False
-				else:
-					path.append((x,y2))
-					path.append((x,y1))
-					upwards = True
-				robot_x = x
+    for c, cell in enumerate(circuit):
+        path = []
+        cell_info = graph.nodes[cell[3]['trail']]
+        # print(cell)
+        # print(cell_info)
+        # print(robot_x)
 
+        # first time traversing, and is from left to right
+        if len(cell_info['y_list']) <= robot_width:
+            # skip cell if narrower than robot
+            continue
 
-		else:
-			upwards = True
-			x_list = [x for x in range(cell_info['x_left'],cell_info['x_right']+robot_width,robot_width)]
+        if cell[3].get('trail') in augmented_set and cell[3].get('trail') not in augmented_traversed:
+            # augmented_traversed.add(cell[3].get('trail'))
+            mid_y = (cell_info['y_list'][0][0] +
+                     cell_info['y_list'][0][1]) // 2
+            # print(mid_y)
+            upwards = True
+            x_list = [x for x in range(
+                cell_info['x_left'], cell_info['x_right']+robot_width, robot_width)]
+            # this means cell is on the left, and we must go from the right. as distance to right is lesser.
+            if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
+                x_list = x_list[::-1]
+            augmented_traversed[cell[3].get('trail')] = x_list
+            for x in x_list:
+                if(x > cell_info['x_right']):
+                    x = cell_info['x_right']
+                if(x == cell_info['x_left']):
+                    x += wall_distance
+                y1 = mid_y + wall_distance
+                y2 = cell_info['y_list'][x -
+                                         cell_info['x_left']][1] - wall_distance
+                if upwards:
+                    path.append((x, y1))
+                    path.append((x, y2))
+                    upwards = False
+                else:
+                    path.append((x, y2))
+                    path.append((x, y1))
+                    upwards = True
+                robot_x = x
 
-			## if its going from other side, we reverse it
-			# if cell_info['x_left'] < graph.nodes[circuit[c-1][3]['trail']]['x_left']:
-			# 	x_list = x_list[::-1]
+        # second time traversing , means from right to left so have to reverse.
+        elif cell[3].get('trail') in augmented_set and cell[3].get('trail') in augmented_traversed:
+            mid_y = (cell_info['y_list'][0][0] +
+                     cell_info['y_list'][0][1]) // 2
+            x_list = [x for x in range(
+                cell_info['x_left'], cell_info['x_right']+robot_width, robot_width)]
+            x_list = augmented_traversed[cell[3].get('trail')][::-1]
+            upwards = True
+            for x in x_list:
+                if(x > cell_info['x_right']):
+                    x = cell_info['x_right']
+                if(x == cell_info['x_left']):
+                    x += wall_distance
+                y1 = cell_info['y_list'][x -
+                                         cell_info['x_left']][0] + wall_distance
+                y2 = mid_y - wall_distance
+                if upwards:
+                    path.append((x, y1))
+                    path.append((x, y2))
+                    upwards = False
+                else:
+                    path.append((x, y2))
+                    path.append((x, y1))
+                    upwards = True
+                robot_x = x
 
-			if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
-				x_list = x_list[::-1]
+        else:
+            upwards = True
+            x_list = [x for x in range(
+                cell_info['x_left'], cell_info['x_right']+robot_width, robot_width)]
 
-			## adding the coordinates in the plan	
-			for x in x_list:
-				# edge case
-				if(x>cell_info['x_right']):
-					x = cell_info['x_right']
-				if(x==cell_info['x_left']):
-					x += wall_distance
-				y1 = cell_info['y_list'][x-cell_info['x_left']][0] + wall_distance
-				y2 = cell_info['y_list'][x-cell_info['x_left']][1] - wall_distance
-				if upwards:
-					path.append((x,y1))
-					path.append((x,y2))
-					upwards = False
-				else:
-					path.append((x,y2))
-					path.append((x,y1))
-					upwards = True
-				robot_x = x
-		print(path)
-	return
+            # if its going from other side, we reverse it
+            # if cell_info['x_left'] < graph.nodes[circuit[c-1][3]['trail']]['x_left']:
+            # 	x_list = x_list[::-1]
+
+            if abs(robot_x - cell_info['x_left']) > abs(robot_x - cell_info['x_right']):
+                x_list = x_list[::-1]
+
+            # adding the coordinates in the plan
+            for x in x_list:
+                # edge case
+                if(x > cell_info['x_right']):
+                    x = cell_info['x_right']
+                if(x == cell_info['x_left']):
+                    x += wall_distance
+                y1 = cell_info['y_list'][x -
+                                         cell_info['x_left']][0] + wall_distance
+                y2 = cell_info['y_list'][x -
+                                         cell_info['x_left']][1] - wall_distance
+                if upwards:
+                    path.append((x, y1))
+                    path.append((x, y2))
+                    upwards = False
+                else:
+                    path.append((x, y2))
+                    path.append((x, y1))
+                    upwards = True
+                robot_x = x
+        print(path)
+    return
+
 
 if __name__ == "__main__":
-    arr, config = load_image("test")
+    arr, config = load_image("maptankFixed")
     slices, adjs = sweep_for_slices(arr, (0, 0), 250)
     graph = build_cell_graph(slices, adjs)
     reeb = build_reeb_graph(graph, adjs)
     # pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
-    # pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
+    pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
     # labels = graph_labels(graph)
     # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12),
     #         node_size=800, pos=pos, labels=labels)
 
-    # nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(10),
-    #         node_size=800, pos=pos)
+    nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(30),
+            node_size=800, pos=pos)
     # print(slices)
     edge_labels = {(u, v): attrs["cell"]
                    for u, v, attrs in reeb.edges(data=True)}
-    # nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
-    #                              edge_labels=edge_labels)
+    nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
+                                 edge_labels=edge_labels)
     # plt.show()
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
     circuit = chinese_postman('dataframe.csv')
-    coordinates = boustrophedic_path(graph,circuit,int(sys.argv[1]),int(sys.argv[2]))
-    
+
+    try:
+        footprint = int(sys.argv[1])
+    except:
+        footprint = 1
+
+    try:
+        margin = int(sys.argv[2])
+    except:
+        margin = 1
+
+    coordinates = boustrophedic_path(graph, circuit, footprint, margin)
+
     # pprint(edge_list)
     print("Break here")
