@@ -8,3 +8,6 @@ venv/
 .~lock.*#
 *.swp
 .vscode/
+
+dataframe.csv
+bug.py
