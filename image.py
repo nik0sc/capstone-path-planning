@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import sys
 
 import cv2
+import json
 
 """
 You will need: PIL, numpy, networkx, matplotlib, pygraphviz
@@ -813,7 +814,8 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance):
                     upwards = True
                 robot_x = x
         print(path)
-    return
+        ret.append(path)
+    return ret
 
 
 if __name__ == "__main__":
@@ -822,18 +824,18 @@ if __name__ == "__main__":
     graph = build_cell_graph(slices, adjs)
     reeb = build_reeb_graph(graph, adjs)
     # pos = nx.drawing.nx_agraph.pygraphviz_layout(graph, prog="dot")
-    pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
+    # pos = nx.drawing.nx_agraph.pygraphviz_layout(reeb, prog="neato")
     # labels = graph_labels(graph)
     # nx.draw(graph, with_labels=True, cmap=plt.cm.Paired, node_color=range(12),
     #         node_size=800, pos=pos, labels=labels)
 
-    nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(30),
-            node_size=800, pos=pos)
+    # nx.draw(reeb, with_labels=True, cmap=plt.cm.Paired, node_color=range(30),
+    # node_size=800, pos=pos)
     # print(slices)
-    edge_labels = {(u, v): attrs["cell"]
-                   for u, v, attrs in reeb.edges(data=True)}
-    nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
-                                 edge_labels=edge_labels)
+    # edge_labels = {(u, v): attrs["cell"]
+    #                for u, v, attrs in reeb.edges(data=True)}
+    # nx.draw_networkx_edge_labels(reeb, pos=pos, font_color="red",
+    #                              edge_labels=edge_labels)
     # plt.show()
     edgelist = reeb_process(reeb)
     edgelist = convert_edge_list_to_pandas(edgelist)
@@ -842,14 +844,19 @@ if __name__ == "__main__":
     try:
         footprint = int(sys.argv[1])
     except:
-        footprint = 1
+        footprint = 4
 
     try:
         margin = int(sys.argv[2])
     except:
-        margin = 1
+        margin = 10
 
     coordinates = boustrophedic_path(graph, circuit, footprint, margin)
 
+    with open(f"out_{config['image']}.json", "w") as f:
+        json.dump(coordinates, f)
+
     # pprint(edge_list)
+    print(
+        f"Generated path for {config['image']} footprint={footprint} margin={margin}")
     print("Break here")
