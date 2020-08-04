@@ -11,3 +11,4 @@ venv/
 
 dataframe.csv
 bug.py
+out*.json
