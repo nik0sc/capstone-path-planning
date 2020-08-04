@@ -1,0 +1,37 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: image.py",
+      "type": "python",
+      "request": "launch",
+      "program": "image.py",
+      "args": ["${input:imageName}", "${input:width}", "${input:margin}"],
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "id": "imageName",
+      "type": "pickString",
+      "options": ["test", "test_hard", "maptankFixed", "faketank"],
+      "description": "Name of yaml-image pair to load. (Edit .vscode/launch.json to add a new name)"
+    },
+    {
+      "id": "width",
+      "type": "promptString",
+      "default": "4",
+      "description": "Width of MFL sensor in pixel units"
+    },
+    {
+      "id": "margin",
+      "type": "promptString",
+      "default": "10",
+      "description": "Safety margin to maintain from obstacles in pixel units"
+    }
+  ]
+}
