@@ -696,7 +696,7 @@ def chinese_postman(csv):
     return circuit
 
 
-def boustrophedic_path(graph, circuit, robot_width, wall_distance):
+def boustrophedic_path(graph, circuit, robot_width, wall_distance,side_wall_distance):
 
     ret = []
 
@@ -741,7 +741,7 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance):
                 if(x > cell_info['x_right']):
                     x = cell_info['x_right']
                 if(x == cell_info['x_left']):
-                    x += wall_distance
+                    x += side_wall_distance
                 y1 = mid_y + wall_distance
                 y2 = cell_info['y_list'][x -
                                          cell_info['x_left']][1] - wall_distance
@@ -767,7 +767,7 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance):
                 if(x > cell_info['x_right']):
                     x = cell_info['x_right']
                 if(x == cell_info['x_left']):
-                    x += wall_distance
+                    x += side_wall_distance
                 y1 = cell_info['y_list'][x -
                                          cell_info['x_left']][0] + wall_distance
                 y2 = mid_y - wall_distance
@@ -799,7 +799,7 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance):
                 if(x > cell_info['x_right']):
                     x = cell_info['x_right']
                 if(x == cell_info['x_left']):
-                    x += wall_distance
+                    x += side_wall_distance
                 y1 = cell_info['y_list'][x -
                                          cell_info['x_left']][0] + wall_distance
                 y2 = cell_info['y_list'][x -
@@ -857,7 +857,12 @@ if __name__ == "__main__":
     except:
         margin = 10
 
-    coordinates = boustrophedic_path(graph, circuit, footprint, margin)
+    try:
+        side = int(sys.argv[4])
+    except:
+        side = 0
+
+    coordinates = boustrophedic_path(graph, circuit, footprint, margin, side)
 
     with open(f"out_{config['image']}.json", "w") as f:
         json.dump(coordinates, f)
