@@ -93,7 +93,7 @@ def load_image(name: str) -> Tuple[np.ndarray, Dict]:
         # assert image.mode == "L", "Wrong image pixel mode (not grayscale)"
         image = cv2.imread(config['image'], 0)
     except:
-        print("\x1b[41mCannot open pgm\x1b[0m")
+        print("\x1b[41mCannot open image\x1b[0m")
         raise
 
     # arr = np.array(image.getdata())
@@ -819,7 +819,13 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance):
 
 
 if __name__ == "__main__":
-    arr, config = load_image("maptankFixed")
+    try:
+        image_name = sys.argv[1]
+    except:
+        print(f"You must specify an image name")
+        exit(1)
+
+    arr, config = load_image(image_name)
     slices, adjs = sweep_for_slices(arr, (0, 0), 250)
     graph = build_cell_graph(slices, adjs)
     reeb = build_reeb_graph(graph, adjs)
@@ -842,12 +848,12 @@ if __name__ == "__main__":
     circuit = chinese_postman('dataframe.csv')
 
     try:
-        footprint = int(sys.argv[1])
+        footprint = int(sys.argv[2])
     except:
         footprint = 4
 
     try:
-        margin = int(sys.argv[2])
+        margin = int(sys.argv[3])
     except:
         margin = 10
 
@@ -858,5 +864,6 @@ if __name__ == "__main__":
 
     # pprint(edge_list)
     print(
-        f"Generated path for {config['image']} footprint={footprint} margin={margin}")
+        f"Generated path for {config['image']} "
+        f"footprint={footprint} margin={margin}")
     print("Break here")
