@@ -742,7 +742,7 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance,side_wall_dist
                     x = cell_info['x_right']
                 if(x == cell_info['x_left']):
                     x += side_wall_distance
-                y1 = mid_y + wall_distance
+                y1 = mid_y 
                 y2 = cell_info['y_list'][x -
                                          cell_info['x_left']][1] - wall_distance
                 if upwards:
@@ -770,7 +770,7 @@ def boustrophedic_path(graph, circuit, robot_width, wall_distance,side_wall_dist
                     x += side_wall_distance
                 y1 = cell_info['y_list'][x -
                                          cell_info['x_left']][0] + wall_distance
-                y2 = mid_y - wall_distance
+                y2 = mid_y 
                 if upwards:
                     path.append((x, y1))
                     path.append((x, y2))
